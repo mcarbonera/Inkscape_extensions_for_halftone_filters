@@ -17,7 +17,6 @@
 import numpy
 from PIL import Image, ImageDraw, ImageStat
 import inkex
-import simplestyle
 import os
 import common
 
@@ -30,12 +29,12 @@ def gcr(im, percentage):
         return cmyk_im
     cmyk_im = cmyk_im.split()
     cmyk = []
-    for i in xrange(4):
+    for i in range(4):
         cmyk.append(cmyk_im[i].load())
-    for x in xrange(im.size[0]):
-        for y in xrange(im.size[1]):
+    for x in range(im.size[0]):
+        for y in range(im.size[1]):
             gray = min(cmyk[0][x,y], cmyk[1][x,y], cmyk[2][x,y]) * percentage / 100
-            for i in xrange(3):
+            for i in range(3):
                 cmyk[i][x,y] = cmyk[i][x,y] - gray
             cmyk[3][x,y] = gray
     return Image.merge('CMYK', cmyk_im)
@@ -54,8 +53,8 @@ def halftone(im, cmyk, sample, scale):
         size = channel.size[0]*scale, channel.size[1]*scale
         half_tone = Image.new('L', size)
         draw = ImageDraw.Draw(half_tone)
-        for x in xrange(0, channel.size[0], sample):
-            for y in xrange(0, channel.size[1], sample):
+        for x in range(0, channel.size[0], sample):
+            for y in range(0, channel.size[1], sample):
                 box = channel.crop((x, y, x + sample, y + sample))
                 stat = ImageStat.Stat(box)
                 diameter = (stat.mean[0] / 255)**0.5
@@ -72,28 +71,28 @@ def halftone(im, cmyk, sample, scale):
         angle += 15
     return dots
 
-inkex.localize()
+inkex.localization.localize()
 
 
 class newsprint_filter(inkex.Effect):
-	def __init__(self):
-		inkex.Effect.__init__(self)
- 	def effect(self):
-  		image_node = None
-  		for node in self.selected.values():
-  			if(common.is_image(node)):
-   				image_node = node
-  			if image_node is not None:
-   				image = common.prep_image(image_node)
-   				cmyk = gcr(image, 0)
-   				dots = halftone(image, cmyk, 10, 1)
-   				image = Image.merge('CMYK', dots)
-   				image = image.convert('RGB')
-   				common.save_image(image_node, image, img_format='PNG')
+    def __init__(self):
+        inkex.Effect.__init__(self)
+    def effect(self):
+        image_node = None
+        for node in self.svg.selected.values():
+            if(common.is_image(node)):
+                image_node = node
+            if image_node is not None:
+                image = common.prep_image(image_node)
+                cmyk = gcr(image, 0)
+                dots = halftone(image, cmyk, 10, 1)
+                image = Image.merge('CMYK', dots)
+                image = image.convert('RGB')
+                common.save_image(image_node, image, img_format='PNG')
 
 if __name__ == '__main__':
 	obj = newsprint_filter()
-	obj.affect()
+	obj.run()
 
     		
 

@@ -50,11 +50,10 @@ import six
 # local library
 import inkex
 import cubicsuperpath
-import image_lib.transform as mat
-
+from lxml import etree
 
 try:
-    inkex.localize()
+    inkex.localization.localize()
 except AttributeError:
     import gettext
     _ = gettext.gettext
@@ -253,7 +252,7 @@ def is_clip_path(node):
 
 def create_img_node():
     """Create a new <image> node, without any data yet."""
-    node = inkex.etree.Element(inkex.addNS('image', 'svg'))
+    node = etree.Element(inkex.addNS('image', 'svg'))
     node.set('x', "0")
     node.set('y', "0")
     node.set('preserveAspectRatio', "none")
@@ -267,7 +266,7 @@ def create_img_placeholder(img_node):
                                                       img_node.get('y'),
                                                       img_node.get('width'),
                                                       img_node.get('height'))
-    path = inkex.etree.Element(inkex.addNS('path', 'svg'))
+    path = etree.Element(inkex.addNS('path', 'svg'))
     path.set('d', image_d)
     path.set('style', "fill:none;stroke:none")
     path.set('transform', img_node.get('transform', ""))
@@ -315,7 +314,7 @@ def get_image_data(xlink):
     comma = xlink.find(',')
     if comma > 0:
         if sys.version_info < (3,):
-            data = base64.decodestring(xlink[comma:])                           # pylint: disable=deprecated-method
+            data = base64.decodeBytes(xlink[comma:].encode())                           # pylint: disable=deprecated-method
         else:
             data = base64.decodebytes(bytes(xlink[comma:], 'ascii'))            # pylint: disable=no-member
     else:
@@ -378,7 +377,7 @@ def prep_image(node, add_alpha=False):
             if USE_WAND:
                 image.alpha_channel = True
             elif USE_PIL:
-                if image.mode is not 'RGBA':
+                if image.mode != 'RGBA':
                     image_rgba = ImagePIL.new('RGBA', image.size)
                     image_rgba.paste(image)
                     image = image_rgba.copy()
@@ -522,149 +521,13 @@ def image_info(img):
 
 def wrap_group(node):
     """Wrap node in group, return group."""
-    group = inkex.etree.Element(inkex.addNS('g', 'svg'))
+    group = etree.Element(inkex.addNS('g', 'svg'))
     index = node.getparent().index(node)
     node.getparent().insert(index, group)
     group.append(node)
     return group
 
-
-def group_with(node, path):
-    """Put path into group wrapped around node, return group."""
-    group = wrap_group(node)
-    if group is not None:
-        mat.apply_absolute_diff(node, path)
-        group.append(path)
-    return group
-
-
-# Utility functions for transforms
-
-def mat_path_to_img_node(path, img_node, fit=False):
-    """Return mat which transforms from path to img_node coords."""
-    # 1 apply path transform
-    # 2 apply path parent transform
-    # 3 reverse img_node parent transform
-    mat1 = mat.copy_from(path) if not fit else mat.ident_mat()
-    mat2 = mat.absolute(path.getparent())
-    mat3 = mat.invert(mat.absolute(img_node.getparent()))
-    return mat.compose_triplemat(mat1, mat2, mat3)
-
-
-def mat_img_node_to_image(img_node, image, fit=False):
-    """Return mat which transforms from img_node to image coords."""
-    # 1 reverse img_node transform
-    # 2 if not fit: reverse img_node offset
-    # 3 scale
-    mat1 = mat.invert(mat.copy_from(img_node))
-    mat2 = mat.invert(mat.offset(img_node)) if not fit else mat.ident_mat()
-    mat3 = mat.scale(*get_image_scale(image, img_node))
-    return mat.compose_triplemat(mat1, mat2, mat3)
-
-
-def mat_image_to_img_node(image, img_node, fit=False):
-    """Return mat which transforms from image to img_node coords."""
-    # 1 scale
-    # 2 if not fit: apply img_node offset
-    # 3 apply img_node transform
-    mat1 = mat.invert(mat.scale(*get_image_scale(image, img_node)))
-    mat2 = mat.offset(img_node) if not fit else mat.ident_mat()
-    mat3 = mat.copy_from(img_node)
-    return mat.compose_triplemat(mat1, mat2, mat3)
-
-
-def mat_img_node_to_path(img_node, path, fit=False):
-    """Return mat which transforms from img_node to path coords."""
-    # 1 apply img_node parent transform
-    # 2 reverse path parent transform
-    # 3 ??? reverse path transform
-    mat1 = mat.absolute(img_node.getparent())
-    mat2 = mat.invert(mat.absolute(path.getparent()))
-    # TODO: verify mat3 for fit option
-    mat3 = mat.invert(mat.copy_from(path)) if not fit else mat.ident_mat()
-    return mat.compose_triplemat(mat1, mat2, mat3)
-
-
-# Compensate / apply preserved and parent transforms of helper paths and images
-# Note: parameter 'fit' currently only used by image_perspective.py
-
-def transform_path_to_image(path, img_node, image, fit=False):
-    """Return mat which transforms from path to image coords."""
-    # 1 path to img_node
-    # 2 img_node to image
-    mat1 = mat_path_to_img_node(path, img_node, fit)
-    mat2 = mat_img_node_to_image(img_node, image, fit)
-    return mat.compose_doublemat(mat2, mat1)
-
-
-def transform_image_to_path(image, img_node, path, fit=False):
-    """Return mat which transforms from image to path coords."""
-    # 1 image to img_node
-    # 2 img_node to path
-    mat1 = mat_image_to_img_node(image, img_node, fit)
-    mat2 = mat_img_node_to_path(img_node, path, fit)
-    return mat.compose_doublemat(mat2, mat1)
-
-
 # specific helper functions
-
-def combine_two_paths(path0_path1):
-    """Combine two paths into a new one.
-
-    Combine the transformed csp representations as sub-paths, insert
-    new path element with path data from csp path into document and
-    return the etree element.
-    """
-    path0, path1 = path0_path1
-    csp = []
-    for path in (path0, path1):
-        csp_path = cubicsuperpath.parsePath(path.get('d'))
-        mat.apply_to(mat.copy_from(path), csp_path)
-        csp.append(csp_path)
-    # transform path1 into path0 coords
-    mat.apply_to(mat.absolute_diff(path0, path1), csp[1])
-    # compensate preserved transform of path0 in csp1
-    mat.apply_to(mat.invert(mat.copy_from(path0)), csp[1])
-    # combine the two csp paths (append csp1 as sub-path to csp0)
-    csp[0].append(csp[1][0])
-    # insert as new path into document
-    path = inkex.etree.Element(inkex.addNS('path', 'svg'))
-    path.set('d', cubicsuperpath.formatPath(csp[0]))
-    # insert before source path
-    index = path0.getparent().index(path0)
-    path0.getparent().insert(index, path)
-    # return new path
-    return path
-
-
-def combine_many_paths(path_list):
-    """Combine paths in path_list to single compound path."""
-    if len(path_list):
-        csp = []
-        first = path_list[0]
-        for path in path_list:
-            csp_path = cubicsuperpath.parsePath(path.get('d'))
-            mat.apply_to(mat.copy_from(path), csp_path)
-            if path == first:
-                csp.append(csp_path)
-            else:
-                # transform csp_path into first coords
-                mat.apply_to(mat.absolute_diff(first, path), csp_path)
-                # compensate preserved transform of first in csp_path
-                mat.apply_to(mat.invert(mat.copy_from(first)), csp_path)
-                csp[0].append(csp_path[0])
-        # insert as new path into document
-        path = inkex.etree.Element(inkex.addNS('path', 'svg'))
-        path.set('d', cubicsuperpath.formatPath(csp[0]))
-        # insert before source path
-        index = first.getparent().index(first)
-        first.getparent().insert(index, path)
-        # return new path
-        return path
-    else:
-        return None
-
-
 def rect_to_d(node):
     """Return 'd' path parameter for rect."""
     if is_rect(node):
@@ -681,20 +544,10 @@ def rect_to_d(node):
 
 def csp_to_path(csp, fill="blue", opacity=0.5):
     """Draw a path from csp and append to parent."""
-    path = inkex.etree.Element(inkex.addNS('path', 'svg'))
+    path = etree.Element(inkex.addNS('path', 'svg'))
     path.set('d', cubicsuperpath.formatPath(csp))
     path.set('style', 'fill:{0};opacity:{1}'.format(fill, str(opacity)))
     return path
-
-
-def csp_to_bbox(csp, parent):
-    """Return simpletransform geom bbox of csp path."""
-    clip_path = inkex.etree.Element(inkex.addNS('path', 'svg'))
-    parent.append(clip_path)
-    clip_path.set('d', cubicsuperpath.formatPath(csp))
-    clip_bbox = mat.st.computeBBox([clip_path])
-    parent.remove(clip_path)
-    return clip_bbox
 
 
 def csp_to_points(dest, sub, points):
@@ -703,33 +556,6 @@ def csp_to_points(dest, sub, points):
         points = len(dest[sub])
     return [[(csp[1][0], csp[1][1]) for csp in subs]
             for subs in dest][sub][:points]
-
-
-def get_clip_bbox_csp(clip_path_def, cmat=None):
-    """Return bbox of clipPath element in csp notation."""
-    if cmat is None:
-        cmat = mat.ident_mat()
-    clip_bbox = None
-    clip_path_csp = None
-    if clip_path_def is not None:
-        clip_bbox = mat.st.computeBBox(clip_path_def.getchildren(), cmat)
-    if clip_bbox is not None:
-        clip_path_csp = cubicsuperpath.parsePath(
-            'm {0},{1} h {2} v {3} h -{2}'.format(
-                clip_bbox[0], clip_bbox[2],
-                clip_bbox[1] - clip_bbox[0],
-                clip_bbox[3] - clip_bbox[2]))
-        mat.apply_copy_from(clip_path_def, clip_path_csp)
-    return clip_path_csp
-
-
-def draw_cropbox(node, cropbox_csp):
-    """Draw crop box and insert after cropped image."""
-    cropbox = csp_to_path(cropbox_csp)
-    index = node.getparent().index(node)
-    node.getparent().insert(index+1, cropbox)
-    mat.apply_copy_from(node, cropbox)
-    return cropbox
 
 
 def find_perspective_coeffs(pb, pa):
@@ -773,7 +599,7 @@ class ImageModifier(inkex.Effect):
         """
         defs = self.document.getroot().find(inkex.addNS('defs', 'svg'))
         if defs is None:
-            defs = inkex.etree.SubElement(self.document.getroot(),
+            defs = etree.SubElement(self.document.getroot(),
                                           inkex.addNS('defs', 'svg'))
         return defs
 
@@ -795,57 +621,6 @@ class ImageModifier(inkex.Effect):
                 return self.get_clip_def(node.getparent(), parents)
         return (node, None)
 
-    def get_clip_geom(self, node, parents=False):
-        """Return clipped node and clip bbox as csp (quadrilateral)."""
-        clip_base = node
-        clip_path_csp = None
-        clipped_node, clip_path_def = self.get_clip_def(node, parents)
-        if clip_path_def is not None:
-            clip_path_units = clip_path_def.get('clipPathUnits')
-            if clipped_node == clip_base:
-                if clip_path_units == 'objectBoundingBox':
-                    # TODO: implement support for 'objectBoundingBox'
-                    # 1. get geom box of clipped object (clip_base)
-                    # 2. convert into a matrix transformation
-                    # 3. pass matrix as cmat to get_clip_bbox_csp()
-                    # until implemented, fall back to:
-                    cmat = mat.ident_mat()
-                else:
-                    cmat = mat.ident_mat()
-            else:
-                if clip_path_units == 'objectBoundingBox':
-                    # TODO: implement support for 'objectBoundingBox'
-                    # 1. get geom box of clipped group (clipped_node)
-                    # 2. convert into a matrix transformation
-                    # 3. compose with cmat (see below)
-                    # 4. pass cmat to get_clip_bbox_csp()
-                    # until implemented, fall back to:
-                    umat = mat.ident_mat()
-                else:
-                    umat = mat.ident_mat()
-                # compensate preserved transforms on nested groups
-                pmat = mat.compose_triplemat(
-                    mat.copy_from(clipped_node),
-                    mat.absolute_diff(clip_base, clipped_node),
-                    mat.invert(mat.copy_from(clip_base)))
-                # finally, compose with matrix for clipPathUnits
-                # TODO: once we have real umat, check compose order!
-                cmat = mat.compose_doublemat(umat, pmat)
-            clip_path_csp = get_clip_bbox_csp(clip_path_def, cmat)
-            mat.apply_to(mat.invert(cmat), clip_path_csp)
-        return (clipped_node, clip_path_csp)
-
-    def clip_release(self, node, keep=True):
-        """Release clip applied to node."""
-        clipped_node, clip_path_def = self.get_clip_def(node)
-        if clip_path_def is not None:
-            if keep:
-                index = clipped_node.getparent().index(node)
-                for i, child in enumerate(clip_path_def, start=index+1):
-                    node.getparent().insert(i, child)
-                    mat.apply_copy_from(clipped_node, child)
-            clip_path_def.getparent().remove(clip_path_def)
-            clipped_node.set('clip-path', "none")
 
     def clip_set(self, node, path):
         """Clip node with path.
@@ -853,19 +628,13 @@ class ImageModifier(inkex.Effect):
         First, add clipPath definition with path to <defs>.
         Then clip node with new clipPath.
         """
-        clip = inkex.etree.SubElement(self.get_defs(),
+        clip = etree.SubElement(self.get_defs(),
                                       inkex.addNS('clipPath', 'svg'))
         clip.append(path)
         clip_id = self.uniqueId('clipPath')
         clip.set('id', clip_id)
         node.set('clip-path', 'url(#{0})'.format(clip_id))
-
-    def clip_wrap(self, img_node, path):
-        """Wrap <image> node in group and clip group with path."""
-        group = wrap_group(img_node)
-        if group is not None:
-            mat.apply_to_d(mat.absolute_diff(img_node, path), path)
-            self.clip_set(group, path)
+        
 
     def wrap_result(self, img_node, path, mode="other"):
         """Post-process (wrap) the result of the image modification."""
@@ -1097,9 +866,9 @@ class ImageMassModifier(ImageModifier):
     def __init__(self):
         """Init base class for ImageModifier2 class."""
         ImageModifier.__init__(self)
-        self.OptionParser.add_option("--scope",
+        self.arg_parser.add_argument("--scope",
                                      action="store",
-                                     type="string",
+                                     type=string,
                                      dest="scope",
                                      default="selected_only",
                                      help="Command scope")
@@ -1180,15 +949,15 @@ class ImageAttributer(ImageMassModifier):
     def __init__(self):
         """Init base class, add default option for ImageAttributer class."""
         ImageMassModifier.__init__(self)
-        self.OptionParser.add_option("--scope_attribute",
+        self.arg_parser.add_argument("--scope_attribute",
                                      action="store",
-                                     type="string",
+                                     type=string,
                                      dest="scope_attribute",
                                      default="selected_only",
                                      help="Command scope")
-        self.OptionParser.add_option("--scope_property",
+        self.arg_parser.add_argument("--scope_property",
                                      action="store",
-                                     type="string",
+                                     type=string,
                                      dest="scope_property",
                                      default="selected_only",
                                      help="Command scope")

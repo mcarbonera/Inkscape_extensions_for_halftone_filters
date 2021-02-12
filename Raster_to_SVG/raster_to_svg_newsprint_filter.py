@@ -17,17 +17,24 @@
 import os
 import sys
 import base64
-import StringIO
-from urllib import url2pathname
-from urlparse import urlparse
+
+# Python 2
+# import StringIO
+# from urllib import url2pathname
+# from urlparse import urlparse
+
+# Python 3
+from io import BytesIO
+from urllib.request import url2pathname
+from urllib.parse import urlparse
+
 from PIL import Image, ImageDraw, ImageStat
 
-
 import inkex
-import simplestyle
+from lxml import etree
 
 try:
-    inkex.localize()
+    inkex.localization.localize()
 except:
     import gettext
     _ = gettext.gettext
@@ -84,7 +91,7 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
         data = ''
 
         if comma > 0:
-            data = base64.decodestring(xlink[comma:])
+            data = base64.decodebytes(xlink[comma:].encode())
         else:
             inkex.errormsg(_("Failed to read embedded image data."))
 
@@ -106,7 +113,7 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
             # embedded bitmap image
             data = self.getImageData(xlink)
             if data:
-                image = Image.open(StringIO.StringIO(data))
+                image = Image.open(BytesIO(data))
         else:
             # unsupported type of link detected
             inkex.errormsg(_("Unsupported type of 'xlink:href'"))
@@ -114,37 +121,42 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
         return image
 
 
-    def draw_rectangle(self,(x, y), (l,b), color, parent, id_):
+    def draw_rectangle(self, position, dimension, color, parent, id_):
+        x, y = position
+        l, b = dimension
         
         style = {'stroke': 'none', 'stroke-width': '1', 'fill': color,"mix-blend-mode" : "multiply"}
-        attribs = {'style': simplestyle.formatStyle(style), 'x': str(x), 'y': str(y), 'width': str(l), 'height':str(b)}
+        attribs = {'style': str(inkex.Style(style)), 'x': str(x), 'y': str(y), 'width': str(l), 'height':str(b)}
         if id_ is not None:
             attribs.update({'id': id_})
-        obj = inkex.etree.SubElement(parent, inkex.addNS('rect', 'svg'), attribs)
+        obj = etree.SubElement(parent, inkex.addNS('rect', 'svg'), attribs)
         return obj
 
-    def draw_circle(self,(x, y), r, color, parent, id_):
+    def draw_circle(self, position, r, color, parent, id_):
+        x, y = position
         
         style = {'stroke': 'none', 'stroke-width': '1', 'fill': color,"mix-blend-mode" : "multiply"}
-        attribs = {'style': simplestyle.formatStyle(style), 'cx': str(x), 'cy': str(y), 'r': str(r)}
+        attribs = {'style': str(inkex.Style(style)), 'cx': str(x), 'cy': str(y), 'r': str(r)}
         if id_ is not None:
             attribs.update({'id': id_})
-        obj = inkex.etree.SubElement(parent, inkex.addNS('circle', 'svg'), attribs)
+        obj = etree.SubElement(parent, inkex.addNS('circle', 'svg'), attribs)
         return obj
 
-    def draw_ellipse(self,(x, y), (r1,r2), color, parent, id_,transform):
+    def draw_ellipse(self, position, radius, color, parent, id_,transform):
+        x, y = position
+        r1, r2 = radius
         
         style = {'stroke': 'none', 'stroke-width': '1', 'fill': color,"mix-blend-mode" : "multiply"}
         if(transform == 1.5):
-            attribs = {'style': simplestyle.formatStyle(style), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2),'transform': 'rotate(1.5)'}
+            attribs = {'style': str(inkex.Style(style)), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2),'transform': 'rotate(1.5)'}
         elif(transform == 3):
-            attribs = {'style': simplestyle.formatStyle(style), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2),'transform': 'rotate(3)'}
+            attribs = {'style': str(inkex.Style(style)), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2),'transform': 'rotate(3)'}
         else:
-            attribs = {'style': simplestyle.formatStyle(style), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2),'transform': 'rotate(0)'}
+            attribs = {'style': str(inkex.Style(style)), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2),'transform': 'rotate(0)'}
 
         if id_ is not None:
             attribs.update({'id': id_})
-        obj = inkex.etree.SubElement(parent, inkex.addNS('ellipse', 'svg'), attribs)
+        obj = etree.SubElement(parent, inkex.addNS('ellipse', 'svg'), attribs)
         return obj
 
     def gcr(self,im, percentage):
@@ -153,12 +165,12 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
             return cmyk_im
         cmyk_im = cmyk_im.split()
         cmyk = []
-        for i in xrange(4):
+        for i in range(4):
             cmyk.append(cmyk_im[i].load())
-        for x in xrange(im.size[0]):
-            for y in xrange(im.size[1]):
+        for x in range(im.size[0]):
+            for y in range(im.size[1]):
                 gray = min(cmyk[0][x,y], cmyk[1][x,y], cmyk[2][x,y]) * percentage / 100
-                for i in xrange(3):
+                for i in range(3):
                     cmyk[i][x,y] = cmyk[i][x,y] - gray
                 cmyk[3][x,y] = gray
         return Image.merge('CMYK', cmyk_im)
@@ -171,8 +183,8 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
         for channel in cmyk:
             count=count+1
             size = channel.size[0]*scale, channel.size[1]*scale
-            for x in xrange(0, channel.size[0], sample):
-                for y in xrange(0, channel.size[1], sample):
+            for x in range(0, channel.size[0], sample):
+                for y in range(0, channel.size[1], sample):
                     box = channel.crop((x, y, x + sample, y + sample))
                     stat = ImageStat.Stat(box)
                     diameter = (stat.mean[0] / 255)**0.5
@@ -196,7 +208,7 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
             (width, height) = image.size
             nodeParent = node.getparent()
             nodeIndex = nodeParent.index(node)
-            pixel2svg_group = inkex.etree.Element(inkex.addNS('g', 'svg'))
+            pixel2svg_group = etree.Element(inkex.addNS('g', 'svg'))
             pixel2svg_group.set('id', "%s_pixel2svg" % node.get('id'))
             nodeParent.insert(nodeIndex+1, pixel2svg_group)
             self.draw_rectangle((0,0),(width,height),'white',pixel2svg_group,'id')
@@ -210,7 +222,7 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
     def effect(self):
         found_image = False
         if (self.options.ids):
-            for node in self.selected.itervalues():
+            for node in self.svg.selected.values():
                 if node.tag == inkex.addNS('image', 'svg'):
                     found_image = True
                     self.clustered(node)
@@ -223,4 +235,4 @@ class raster_to_svg_newsprint_filter(inkex.Effect):
 
 if __name__ == '__main__':
     e = raster_to_svg_newsprint_filter()
-    e.affect()
+    e.run()

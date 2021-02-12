@@ -4,8 +4,6 @@
   <id>Abhishek Sehgal_error_diffusion</id>
 
   <dependency type="executable" location="extensions">error_diffusion.py</dependency>
-  <dependency type="executable" location="extensions">image_lib/common.py</dependency>
-  <dependency type="executable" location="extensions">image_lib/transform.py</dependency>
   <dependency type="executable" location="extensions">inkex.py</dependency>
   <dependency type="executable" location="extensions">cubicsuperpath.py</dependency>
   <dependency type="executable" location="extensions">simpletransform.py</dependency>
