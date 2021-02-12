@@ -17,19 +17,17 @@
 import os
 import sys
 import base64
-import StringIO
-from urllib import url2pathname
-from urlparse import urlparse
+from io import BytesIO
+from urllib.request import url2pathname
+from urllib.parse import urlparse
 from PIL import Image, ImageDraw, ImageStat
 import numpy as np
 
-
 import inkex
-import simplestyle
-
+from lxml import etree
 
 try:
-    inkex.localize()
+    inkex.localization.localize()
 except:
     import gettext
     _ = gettext.gettext
@@ -47,8 +45,8 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
     def __init__(self):
         inkex.Effect.__init__(self)
 
-        self.OptionParser.add_option("-t", "--width",
-                                     action="store", type="int",
+        self.arg_parser.add_argument("-t", "--width",
+                                     action="store", type=int,
                                      dest="width", default=200,
                                      help="this variable will be used to resize the original selected image to a width of whatever \
                                      you enter and height proportional to the new width, thus maintaining the aspect ratio")
@@ -92,7 +90,7 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
         data = ''
 
         if comma > 0:
-            data = base64.decodestring(xlink[comma:])
+            data = base64.decodebytes(xlink[comma:].encode())
         else:
             inkex.errormsg(_("Failed to read embedded image data."))
 
@@ -114,7 +112,7 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
             # embedded bitmap image
             data = self.getImageData(xlink)
             if data:
-                image = Image.open(StringIO.StringIO(data))
+                image = Image.open(BytesIO(data))
         else:
             # unsupported type of link detected
             inkex.errormsg(_("Unsupported type of 'xlink:href'"))
@@ -122,31 +120,36 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
         return image
 
 
-    def draw_rectangle(self,(x, y), (l,b), color, parent, id_):
+    def draw_rectangle(self, position, dimensions, color, parent, id_):
+        x, y = position
+        l, b = dimensions
         
         style = {'stroke': 'none', 'stroke-width': '1', 'fill': color,"mix-blend-mode" : "multiply"}
-        attribs = {'style': simplestyle.formatStyle(style), 'x': str(x), 'y': str(y), 'width': str(l), 'height':str(b)}
+        attribs = {'style': str(inkex.Style(style)), 'x': str(x), 'y': str(y), 'width': str(l), 'height':str(b)}
         if id_ is not None:
             attribs.update({'id': id_})
-        obj = inkex.etree.SubElement(parent, inkex.addNS('rect', 'svg'), attribs)
+        obj = etree.SubElement(parent, inkex.addNS('rect', 'svg'), attribs)
         return obj
 
-    def draw_circle(self,(x, y), r, color, parent, id_):
+    def draw_circle(self, position, r, color, parent, id_):
+        x, y = position
         
         style = {'stroke': 'none', 'stroke-width': '1', 'fill': color,"mix-blend-mode" : "multiply"}
-        attribs = {'style': simplestyle.formatStyle(style), 'cx': str(x), 'cy': str(y), 'r': str(r)}
+        attribs = {'style': str(inkex.Style(style)), 'cx': str(x), 'cy': str(y), 'r': str(r)}
         if id_ is not None:
             attribs.update({'id': id_})
-        obj = inkex.etree.SubElement(parent, inkex.addNS('circle', 'svg'), attribs)
+        obj = etree.SubElement(parent, inkex.addNS('circle', 'svg'), attribs)
         return obj
 
-    def draw_ellipse(self,(x, y), (r1,r2), color, parent, id_):
+    def draw_ellipse(self, position, radius, color, parent, id_):
+        x, y = position
+        r1, r2 = radius
         
         style = {'stroke': 'none', 'stroke-width': '1', 'fill': color,"mix-blend-mode" : "multiply"}
-        attribs = {'style': simplestyle.formatStyle(style), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2)}
+        attribs = {'style': str(inkex.Style(style)), 'cx': str(x), 'cy': str(y), 'rx': str(r1), 'ry': str(r2)}
         if id_ is not None:
             attribs.update({'id': id_})
-        obj = inkex.etree.SubElement(parent, inkex.addNS('ellipse', 'svg'), attribs)
+        obj = etree.SubElement(parent, inkex.addNS('ellipse', 'svg'), attribs)
         return obj
 
     
@@ -211,7 +214,7 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
             (width, height) = image.size
             nodeParent = node.getparent()
             nodeIndex = nodeParent.index(node)
-            pixel2svg_group = inkex.etree.Element(inkex.addNS('g', 'svg'))
+            pixel2svg_group = etree.Element(inkex.addNS('g', 'svg'))
             pixel2svg_group.set('id', "%s_pixel2svg" % node.get('id'))
             nodeParent.insert(nodeIndex+1, pixel2svg_group)
             self.draw_rectangle((0,0),(basewidth,hsize),'white',pixel2svg_group,'id')
@@ -225,7 +228,7 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
     def effect(self):
         found_image = False
         if (self.options.ids):
-            for node in self.selected.itervalues():
+            for node in self.svg.selected.values():
                 if node.tag == inkex.addNS('image', 'svg'):
                     found_image = True
                     self.dithering(node)
@@ -238,4 +241,4 @@ class raster_to_svg_ordered_dithering(inkex.Effect):
 
 if __name__ =='__main__':
     e = raster_to_svg_ordered_dithering()
-    e.affect()
+    e.run()

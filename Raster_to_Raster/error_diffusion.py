@@ -17,7 +17,6 @@
 import numpy 
 from PIL import Image, ImageDraw, ImageStat
 import inkex
-import simplestyle
 import os
 import common
 
@@ -41,7 +40,7 @@ class error_diffusion(inkex.Effect):
 		inkex.Effect.__init__(self)
 	def effect(self):
 		image_node = None
-		for node in self.selected.values():
+		for node in self.svg.selected.values():
 			if(common.is_image(node)):
 				image_node = node
 			if image_node is not None:
@@ -55,4 +54,4 @@ class error_diffusion(inkex.Effect):
   
 if __name__ == '__main__':
 	obj = error_diffusion()
-	obj.affect()
+	obj.run()

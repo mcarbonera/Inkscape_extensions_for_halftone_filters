@@ -17,7 +17,6 @@
 import numpy
 from PIL import Image, ImageDraw, ImageStat
 import inkex
-import simplestyle
 import os
 import common
 
@@ -60,7 +59,7 @@ class ordered_dithering(inkex.Effect):
 		inkex.Effect.__init__(self)
 	def effect(self):
 		image_node = None
-		for node in self.selected.values():
+		for node in self.svg.selected.values():
 			if(common.is_image(node)):
 				image_node = node
 			if image_node is not None:
@@ -73,6 +72,6 @@ class ordered_dithering(inkex.Effect):
 
 if __name__ == '__main__':
 	obj = ordered_dithering()
-	obj.affect()
+	obj.run()
 
 			
